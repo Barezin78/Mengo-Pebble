@@ -1,0 +1,26 @@
+# Pebble SDK
+build/
+.lock-waf*
+
+# Dependências (Clay / PebbleKit JS)
+node_modules/
+npm-debug.log*
+
+# Python
+*.pyc
+*.pyo
+__pycache__/
+
+# Sistema e editores
+.DS_Store
+Thumbs.db
+*~
+*.swp
+.idea/
+.vscode/
+
+# Logs locais
+*.log
+
+# O `pebble build` gera o .pbw dentro de build/ (ignorado acima).
+# O pacote publicado fica versionado em releases/.

@@ -1,0 +1,98 @@
+{
+  "name": "flamengo-watchface",
+  "author": "Raimundo",
+  "version": "1.2.0",
+  "keywords": [
+    "pebble-app"
+  ],
+  "private": true,
+  "dependencies": {
+    "pebble-clay": "^1.0.4"
+  },
+  "pebble": {
+    "displayName": "Mengão",
+    "uuid": "6f1a2b3c-1895-4c2e-9a7d-c8102e000001",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+      "emery",
+      "basalt",
+      "diorite"
+    ],
+    "watchapp": {
+      "watchface": true
+    },
+    "messageKeys": [
+      "TEMP",
+      "CODE",
+      "IS_DAY",
+      "TMIN",
+      "TMAX",
+      "ERROR",
+      "REQUEST",
+      "M_MODE",
+      "M_ID",
+      "M_HOME",
+      "M_TIME",
+      "M_FLA",
+      "M_OPP",
+      "M_OPP_NAME",
+      "M_COMP",
+      "M_CLOCK",
+      "M_ERR",
+      "CFG_FAHRENHEIT",
+      "CFG_SHOW_WEATHER",
+      "CFG_SHOW_MATCH",
+      "CFG_VIBE_GOAL",
+      "CFG_VIBE_BT",
+      "CFG_WX_INTERVAL"
+    ],
+    "resources": {
+      "media": [
+        {
+          "type": "font",
+          "name": "FONT_TIME_LG_80",
+          "file": "fonts/BarlowCondensed-Bold.ttf",
+          "characterRegex": "[0-9:]",
+          "targetPlatforms": [
+            "emery"
+          ]
+        },
+        {
+          "type": "font",
+          "name": "FONT_TIME_SM_60",
+          "file": "fonts/BarlowCondensed-Bold.ttf",
+          "characterRegex": "[0-9:]",
+          "targetPlatforms": [
+            "basalt",
+            "diorite"
+          ]
+        },
+        {
+          "type": "font",
+          "name": "FONT_LABEL_LG_30",
+          "file": "fonts/BarlowCondensed-Bold.ttf",
+          "characterRegex": "[ 0-9A-Za-z%ÃÁÇÉÍÓÚÂÊÔ:°/'+.\\-]",
+          "targetPlatforms": [
+            "emery"
+          ]
+        },
+        {
+          "type": "font",
+          "name": "FONT_LABEL_SM_22",
+          "file": "fonts/BarlowCondensed-Bold.ttf",
+          "characterRegex": "[ 0-9A-Za-z%ÃÁÇÉÍÓÚÂÊÔ:°/'+.\\-]",
+          "targetPlatforms": [
+            "emery",
+            "basalt",
+            "diorite"
+          ]
+        }
+      ]
+    },
+    "capabilities": [
+      "location",
+      "configurable"
+    ]
+  }
+}
