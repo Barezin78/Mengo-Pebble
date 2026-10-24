@@ -1,7 +1,7 @@
 {
   "name": "flamengo-watchface",
   "author": "Raimundo",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "keywords": [
     "pebble-app"
   ],
@@ -45,14 +45,15 @@
       "CFG_SHOW_MATCH",
       "CFG_VIBE_GOAL",
       "CFG_VIBE_BT",
-      "CFG_WX_INTERVAL"
+      "CFG_WX_INTERVAL",
+      "CFG_STYLE"
     ],
     "resources": {
       "media": [
         {
           "type": "font",
-          "name": "FONT_TIME_LG_80",
-          "file": "fonts/BarlowCondensed-Bold.ttf",
+          "name": "FONT_ANTON_80",
+          "file": "fonts/Anton-Regular-digits.ttf",
           "characterRegex": "[0-9:]",
           "targetPlatforms": [
             "emery"
@@ -60,8 +61,8 @@
         },
         {
           "type": "font",
-          "name": "FONT_TIME_SM_60",
-          "file": "fonts/BarlowCondensed-Bold.ttf",
+          "name": "FONT_ANTON_58",
+          "file": "fonts/Anton-Regular-digits.ttf",
           "characterRegex": "[0-9:]",
           "targetPlatforms": [
             "basalt",
@@ -70,7 +71,45 @@
         },
         {
           "type": "font",
-          "name": "FONT_LABEL_LG_30",
+          "name": "FONT_BEBAS_100",
+          "file": "fonts/BebasNeue-Regular-digits.ttf",
+          "characterRegex": "[0-9]",
+          "targetPlatforms": [
+            "emery"
+          ]
+        },
+        {
+          "type": "font",
+          "name": "FONT_BEBAS_80",
+          "file": "fonts/BebasNeue-Regular-digits.ttf",
+          "characterRegex": "[0-9]",
+          "targetPlatforms": [
+            "basalt",
+            "diorite"
+          ]
+        },
+        {
+          "type": "font",
+          "name": "FONT_BLACK_21",
+          "file": "fonts/BarlowCondensed-Black.ttf",
+          "characterRegex": "[ 0-9A-Za-z%ÃÁÇÉÍÓÚÂÊÔ:°/'+.\\-]",
+          "targetPlatforms": [
+            "emery"
+          ]
+        },
+        {
+          "type": "font",
+          "name": "FONT_BLACK_17",
+          "file": "fonts/BarlowCondensed-Black.ttf",
+          "characterRegex": "[ 0-9A-Za-z%ÃÁÇÉÍÓÚÂÊÔ:°/'+.\\-]",
+          "targetPlatforms": [
+            "basalt",
+            "diorite"
+          ]
+        },
+        {
+          "type": "font",
+          "name": "FONT_BOLD_17",
           "file": "fonts/BarlowCondensed-Bold.ttf",
           "characterRegex": "[ 0-9A-Za-z%ÃÁÇÉÍÓÚÂÊÔ:°/'+.\\-]",
           "targetPlatforms": [
@@ -79,11 +118,48 @@
         },
         {
           "type": "font",
-          "name": "FONT_LABEL_SM_22",
+          "name": "FONT_BOLD_14",
           "file": "fonts/BarlowCondensed-Bold.ttf",
           "characterRegex": "[ 0-9A-Za-z%ÃÁÇÉÍÓÚÂÊÔ:°/'+.\\-]",
           "targetPlatforms": [
-            "emery",
+            "basalt",
+            "diorite"
+          ]
+        },
+        {
+          "type": "font",
+          "name": "FONT_LABEL_22",
+          "file": "fonts/BarlowCondensed-Bold.ttf",
+          "characterRegex": "[ 0-9A-Za-z%ÃÁÇÉÍÓÚÂÊÔ:°/'+.\\-]",
+          "targetPlatforms": [
+            "emery"
+          ]
+        },
+        {
+          "type": "font",
+          "name": "FONT_LABEL_18",
+          "file": "fonts/BarlowCondensed-Bold.ttf",
+          "characterRegex": "[ 0-9A-Za-z%ÃÁÇÉÍÓÚÂÊÔ:°/'+.\\-]",
+          "targetPlatforms": [
+            "basalt",
+            "diorite"
+          ]
+        },
+        {
+          "type": "font",
+          "name": "FONT_DAY_34",
+          "file": "fonts/BarlowCondensed-Black.ttf",
+          "characterRegex": "[0-9]",
+          "targetPlatforms": [
+            "emery"
+          ]
+        },
+        {
+          "type": "font",
+          "name": "FONT_DAY_26",
+          "file": "fonts/BarlowCondensed-Black.ttf",
+          "characterRegex": "[0-9]",
+          "targetPlatforms": [
             "basalt",
             "diorite"
           ]

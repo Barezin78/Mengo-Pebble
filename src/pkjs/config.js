@@ -5,6 +5,20 @@ module.exports = [
   {
     type: 'section',
     items: [
+      { type: 'heading', defaultValue: 'Estilo' },
+      {
+        type: 'radiogroup', messageKey: 'CFG_STYLE', label: 'Visual do mostrador', defaultValue: '0',
+        options: [
+          { label: 'Clássico (listrado)', value: '0' },
+          { label: 'Minimalista', value: '1' },
+          { label: 'Placar (estádio)', value: '2' }
+        ]
+      }
+    ]
+  },
+  {
+    type: 'section',
+    items: [
       { type: 'heading', defaultValue: 'Clima' },
       { type: 'toggle', messageKey: 'CFG_SHOW_WEATHER', label: 'Mostrar o clima', defaultValue: true },
       {

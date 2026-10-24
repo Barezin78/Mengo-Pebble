@@ -1,5 +1,6 @@
-// Mengão — Flamengo-themed watchface (rubro-negro) — v1.2
+// Mengão — Flamengo-themed watchface (rubro-negro) — v1.3
 // Time, date (pt-BR), weather (Open-Meteo), next match / live score (ESPN), battery.
+// Styles (chosen in the settings page): Clássico listrado (default), Minimalista, Placar.
 #include <pebble.h>
 
 #define COLOR_RED    PBL_IF_COLOR_ELSE(GColorRed, GColorWhite)
@@ -7,7 +8,7 @@
 
 static Window *s_window;
 static Layer *s_canvas;
-static GFont s_time_font, s_label_font, s_small_font, s_mini_font;
+static GFont s_anton, s_bebas, s_black_font, s_bold_font, s_label_font, s_day_font, s_mini_font;
 static char s_time_buf[8];
 static char s_date_buf[16];
 static int s_battery = 100;
@@ -26,10 +27,11 @@ typedef struct {
   uint8_t vibe_goal;
   uint8_t vibe_bt;
   uint8_t wx_interval;   // minutes
+  uint8_t style;         // 0 Clássico, 1 Minimalista, 2 Placar (added in v1.3)
 } Settings;
 
 static Settings s_cfg = {.fahrenheit = 0, .show_weather = 1, .show_match = 1,
-                         .vibe_goal = 1, .vibe_bt = 1, .wx_interval = 30};
+                         .vibe_goal = 1, .vibe_bt = 1, .wx_interval = 30, .style = 0};
 
 // ---------- Weather ----------
 #define WEATHER_MAX_AGE (6 * 60 * 60)     // ignore cache older than 6h
@@ -132,24 +134,6 @@ static void draw_shield(GContext *ctx, GRect r) {
   graphics_context_set_stroke_width(ctx, 1);
   gpath_draw_outline(ctx, path);
   gpath_destroy(path);
-}
-
-static void draw_battery(GContext *ctx, GRect r) {
-  // body
-  graphics_context_set_stroke_color(ctx, GColorWhite);
-  graphics_context_set_stroke_width(ctx, 1);
-  graphics_draw_rect(ctx, r);
-  // nub
-  graphics_context_set_fill_color(ctx, GColorWhite);
-  graphics_fill_rect(ctx, GRect(r.origin.x + r.size.w, r.origin.y + r.size.h / 4, 2, r.size.h / 2), 0, GCornerNone);
-  // level
-  int inner_w = r.size.w - 4;
-  int fill_w = inner_w * s_battery / 100;
-  if (fill_w < 1) fill_w = 1;
-  GColor level = s_battery <= 20 ? PBL_IF_COLOR_ELSE(GColorChromeYellow, GColorWhite) : PBL_IF_COLOR_ELSE(GColorRed, GColorWhite);
-  if (s_charging) level = PBL_IF_COLOR_ELSE(GColorGreen, GColorWhite);
-  graphics_context_set_fill_color(ctx, level);
-  graphics_fill_rect(ctx, GRect(r.origin.x + 2, r.origin.y + 2, fill_w, r.size.h - 4), 0, GCornerNone);
 }
 
 // Bluetooth rune with a slash (shown only when disconnected)
@@ -261,60 +245,54 @@ static void draw_weather_icon(GContext *ctx, WxIcon icon, bool day, int x, int y
   }
 }
 
-static void draw_pill(GContext *ctx, GRect r) {
-  graphics_context_set_fill_color(ctx, GColorBlack);
-  graphics_fill_rect(ctx, r, r.size.h / 2, GCornersAll);
-  graphics_context_set_stroke_color(ctx, GColorWhite);
-  graphics_context_set_stroke_width(ctx, 2);
-  graphics_draw_round_rect(ctx, r, r.size.h / 2);
-}
+// ---------- Colours (64-colour palette; falls back to B/W on diorite) ----------
+#define C_DRED      PBL_IF_COLOR_ELSE(GColorDarkCandyAppleRed, GColorWhite)   // #AA0000
+#define C_MAROON    PBL_IF_COLOR_ELSE(GColorBulgarianRose, GColorBlack)       // #550000
+#define C_LGRY      PBL_IF_COLOR_ELSE(GColorLightGray, GColorWhite)
+#define C_DGRY      PBL_IF_COLOR_ELSE(GColorDarkGray, GColorWhite)
+#define C_AMBER     PBL_IF_COLOR_ELSE(GColorChromeYellow, GColorWhite)
+#define C_YELLOW    PBL_IF_COLOR_ELSE(GColorIcterine, GColorWhite)
+
+enum { STYLE_CLASSICO = 0, STYLE_MINIMAL = 1, STYLE_PLACAR = 2 };
+
+// Layouts are designed for emery (200x228) and scaled for 144x168 screens.
+static int s_w = 200, s_h = 228;
+#define X(v) ((v) * s_w / 200)
+#define Y(v) ((v) * s_h / 228)
 
 static GSize text_size(const char *t, GFont f) {
-  return graphics_text_layout_get_content_size(t, f, GRect(0, 0, 200, 60), GTextOverflowModeFill, GTextAlignmentLeft);
+  return graphics_text_layout_get_content_size(t, f, GRect(0, 0, 400, 200), GTextOverflowModeFill, GTextAlignmentLeft);
 }
 
-// Draws text vertically centred in a row (custom fonts have extra top padding)
-static void draw_text_vc(GContext *ctx, const char *t, GFont f, int x, int row_y, int row_h, int tw, int nudge) {
+// Distance from the text box top to the middle of the capitals, per font (measured on the emulator).
+static int cap_mid(GFont f, int box_h) {
+  if (f == s_anton) return box_h * 56 / 100;
+  if (f == s_bebas) return box_h * 64 / 100;
+  if (f == s_mini_font) return box_h * 64 / 100;
+  return box_h * 61 / 100;   // Barlow Condensed
+}
+
+// Text boxes are kept inside the screen: the basalt firmware froze when a text box
+// ran past the screen edge.
+static GRect safe_box(int x, int y, int w, int h) {
+  if (x < 0) { w += x; x = 0; }
+  if (y < 0) { h += y; y = 0; }
+  if (x + w > s_w) w = s_w - x;
+  if (y + h > s_h) h = s_h - y;
+  if (w < 1) w = 1;
+  if (h < 1) h = 1;
+  return GRect(x, y, w, h);
+}
+
+// Draws t with its capitals vertically centred on cy. align: -1 = x is left edge, 0 = centre, 1 = right edge.
+// Returns the text width.
+static int text_at(GContext *ctx, const char *t, GFont f, GColor c, int x, int cy, int align) {
   GSize sz = text_size(t, f);
-  graphics_draw_text(ctx, t, f, GRect(x, row_y + (row_h - sz.h) / 2 - nudge, tw + 4, sz.h + 8),
+  int left = align < 0 ? x : (align == 0 ? x - sz.w / 2 : x - sz.w);
+  graphics_context_set_text_color(ctx, c);
+  graphics_draw_text(ctx, t, f, safe_box(left, cy - cap_mid(f, sz.h), sz.w + 6, sz.h + 10),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
-}
-
-// ---------- Layout pieces ----------
-static void draw_top_pill(GContext *ctx, GRect top, int h, bool compact) {
-  draw_pill(ctx, top);
-  int sh = top.size.h * 78 / 100, sw = sh * 85 / 100;
-  GRect shield = GRect(top.origin.x + top.size.h / 2 - 7, top.origin.y + (top.size.h - sh) / 2, sw, sh);
-  draw_shield(ctx, shield);
-  int nx = shield.origin.x + sw + 2;
-  int nw = top.origin.x + top.size.w - nx - 6;
-  graphics_context_set_text_color(ctx, GColorWhite);
-  GSize ns = text_size("MENGÃO", s_label_font);
-  graphics_draw_text(ctx, "MENGÃO", s_label_font,
-                     GRect(nx, top.origin.y + (top.size.h - ns.h) / 2 - h / 40 + (compact ? 3 : 0), nw, ns.h + 8),
-                     GTextOverflowModeFill, GTextAlignmentCenter, NULL);
-}
-
-static void draw_center_panel(GContext *ctx, GRect panel, int w, int h, bool compact) {
-  graphics_context_set_fill_color(ctx, GColorBlack);
-  graphics_fill_rect(ctx, panel, 10, GCornersAll);
-  graphics_context_set_stroke_color(ctx, GColorWhite);
-  graphics_context_set_stroke_width(ctx, 2);
-  graphics_draw_round_rect(ctx, panel, 10);
-
-  int time_up = compact ? h * 6 / 100 + 3 : h * 4 / 100;
-  int div_pct = compact ? 64 : 66;
-  GRect tr = GRect(panel.origin.x, panel.origin.y - time_up, panel.size.w, panel.size.h * 75 / 100);
-  graphics_context_set_text_color(ctx, GColorWhite);
-  graphics_draw_text(ctx, s_time_buf, s_time_font, tr, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
-
-  int dy = panel.origin.y + panel.size.h * div_pct / 100;
-  graphics_context_set_fill_color(ctx, COLOR_ACCENT);
-  graphics_fill_rect(ctx, GRect(panel.origin.x + w * 12 / 100, dy, panel.size.w - w * 24 / 100, 3), 0, GCornerNone);
-
-  GRect dr = GRect(panel.origin.x, dy + 1 - (compact ? 2 : 0), panel.size.w, panel.origin.y + panel.size.h - dy + 8);
-  graphics_context_set_text_color(ctx, COLOR_ACCENT);
-  graphics_draw_text(ctx, s_date_buf, s_label_font, dr, GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+  return sz.w;
 }
 
 static int temp_display(int c) {
@@ -323,183 +301,459 @@ static int temp_display(int c) {
   return (f10 >= 0) ? (f10 + 5) / 10 : (f10 - 5) / 10;
 }
 
-// Match pill: [comp tag] [live dot] main-text info-text  (drops pieces until it fits)
-static void draw_match_pill(GContext *ctx, GRect p, int h) {
-  draw_pill(ctx, p);
-  GFont f = s_small_font;
-  int pad = p.size.h / 4;
-  int avail = p.size.w - 2 * pad;
-  bool scored = (s_match.mode == M_LIVE || s_match.mode == M_FINAL);
+// Abstract vulture in flight (original glyph): two swept wings and a small head.
+static void draw_urubu(GContext *ctx, int cx, int cy, int s, GColor col) {
+  graphics_context_set_fill_color(ctx, col);
+  for (int side = -1; side <= 1; side += 2) {
+    GPoint pts[] = {
+      {cx, cy}, {cx + side * s, cy - s * 45 / 100}, {cx + side * s * 75 / 100, cy - s * 15 / 100},
+      {cx + side * s * 110 / 100, cy - s * 5 / 100}, {cx + side * s * 30 / 100, cy + s * 20 / 100},
+    };
+    GPathInfo info = {.num_points = 5, .points = pts};
+    GPath *p = gpath_create(&info);
+    gpath_draw_filled(ctx, p);
+    gpath_destroy(p);
+  }
+  graphics_fill_circle(ctx, GPoint(cx, cy - s * 17 / 100), s * 14 / 100 + 1);
+}
 
-  static char main_full[28], main_short[28], info_full[28], info_short[28], tag[8];
-  const char *opp = s_match.opp_abbr[0] ? s_match.opp_abbr : "???";
-  if (scored) {
-    if (s_match.home) snprintf(main_full, sizeof(main_full), "FLA %d x %d %s", s_match.fla, s_match.opp, opp);
-    else snprintf(main_full, sizeof(main_full), "%s %d x %d FLA", opp, s_match.opp, s_match.fla);
-    snprintf(main_short, sizeof(main_short), "%d x %d %s", s_match.fla, s_match.opp, opp);
-    if (s_match.mode == M_LIVE) snprintf(info_full, sizeof(info_full), "%s", s_match.clock);
-    else snprintf(info_full, sizeof(info_full), "FIM");
-    snprintf(info_short, sizeof(info_short), "%s", info_full);
+static void draw_battery_c(GContext *ctx, GRect r, GColor outline) {
+  graphics_context_set_stroke_color(ctx, outline);
+  graphics_context_set_stroke_width(ctx, 1);
+  graphics_draw_rect(ctx, r);
+  graphics_context_set_fill_color(ctx, outline);
+  graphics_fill_rect(ctx, GRect(r.origin.x + r.size.w, r.origin.y + r.size.h / 4, 2, r.size.h - r.size.h / 2), 0, GCornerNone);
+  int fill_w = (r.size.w - 4) * s_battery / 100;
+  if (fill_w < 1) fill_w = 1;
+  GColor level = s_battery <= 20 ? PBL_IF_COLOR_ELSE(GColorChromeYellow, GColorWhite) : COLOR_RED;
+  if (s_charging) level = PBL_IF_COLOR_ELSE(GColorGreen, GColorWhite);
+  graphics_context_set_fill_color(ctx, level);
+  graphics_fill_rect(ctx, GRect(r.origin.x + 2, r.origin.y + 2, fill_w, r.size.h - 4), 0, GCornerNone);
+}
+
+// ---------- Match text ----------
+typedef struct {
+  char teams[24];      // "FLA x PAL" / "FLA 2 x 1 PAL"
+  char score[12];      // "2 x 1" (FLA first)
+  char when[16];       // next: "DOM 16h" / "HOJE 21h30" / "25/10 16h"; live: clock; final: "FIM"
+  char when_mid[16];   // next: "DOM 16h" (weekday + hour, also for tomorrow) / "25/10"
+  char when_short[16]; // next: "DOM" / "16h" / "25/10"
+  char ko[8];          // next: "16:00" (kick-off time, for LED)
+  const char *opp;
+} MatchText;
+
+static void fmt_hour(char *buf, size_t n, struct tm *tk) {
+  if (clock_is_24h_style()) {
+    if (tk->tm_min == 0) snprintf(buf, n, "%dh", tk->tm_hour);
+    else snprintf(buf, n, "%dh%02d", tk->tm_hour, tk->tm_min);
   } else {
-    if (s_match.home) snprintf(main_full, sizeof(main_full), "FLA x %s", opp);
-    else snprintf(main_full, sizeof(main_full), "%s x FLA", opp);
-    snprintf(main_short, sizeof(main_short), "x %s", opp);
+    strftime(buf, n, "%l:%M", tk);
+    if (buf[0] == ' ') memmove(buf, buf + 1, strlen(buf));
+  }
+}
+
+static MatchText match_text(void) {
+  MatchText m;
+  memset(&m, 0, sizeof(m));
+  m.opp = s_match.opp_abbr[0] ? s_match.opp_abbr : "???";
+  bool scored = (s_match.mode == M_LIVE || s_match.mode == M_FINAL);
+  snprintf(m.score, sizeof(m.score), "%d x %d", s_match.fla, s_match.opp);
+  if (scored) {
+    if (s_match.home) snprintf(m.teams, sizeof(m.teams), "FLA %d x %d %s", s_match.fla, s_match.opp, m.opp);
+    else snprintf(m.teams, sizeof(m.teams), "%s %d x %d FLA", m.opp, s_match.opp, s_match.fla);
+    snprintf(m.when, sizeof(m.when), "%s", s_match.mode == M_LIVE ? s_match.clock : "FIM");
+    snprintf(m.when_short, sizeof(m.when_short), "%s", m.when);
+  } else {
+    if (s_match.home) snprintf(m.teams, sizeof(m.teams), "FLA x %s", m.opp);
+    else snprintf(m.teams, sizeof(m.teams), "%s x FLA", m.opp);
     time_t now = time(NULL), ko = s_match.kickoff;
     struct tm tn = *localtime(&now);
     struct tm tk = *localtime(&ko);
-    char hm[12];
-    strftime(hm, sizeof(hm), clock_is_24h_style() ? "%H:%M" : "%l:%M", &tk);
-    const char *hmp = (hm[0] == ' ') ? hm + 1 : hm;
-    // days between (local dates)
+    char hm[10];
+    fmt_hour(hm, sizeof(hm), &tk);
+    strftime(m.ko, sizeof(m.ko), clock_is_24h_style() ? "%H:%M" : "%l:%M", &tk);
+    if (m.ko[0] == ' ') memmove(m.ko, m.ko + 1, strlen(m.ko));
     struct tm a = tn, b = tk;
     a.tm_hour = b.tm_hour = 12; a.tm_min = b.tm_min = a.tm_sec = b.tm_sec = 0;
     int ddays = (int)((mktime(&b) - mktime(&a) + 43200) / 86400);
-    if (ddays == 0) snprintf(info_full, sizeof(info_full), "HOJE %s", hmp);
-    else if (ddays == 1) snprintf(info_full, sizeof(info_full), "AMANHÃ %s", hmp);
-    else if (ddays > 1 && ddays < 7) snprintf(info_full, sizeof(info_full), "%s %s", DIAS[tk.tm_wday], hmp);
-    else snprintf(info_full, sizeof(info_full), "%02d/%02d %s", tk.tm_mday, tk.tm_mon + 1, hmp);
-    if (ddays == 0) snprintf(info_short, sizeof(info_short), "%s", hmp);
-    else if (ddays > 0 && ddays < 7) snprintf(info_short, sizeof(info_short), "%s", ddays == 1 ? "AMANHÃ" : DIAS[tk.tm_wday]);
-    else snprintf(info_short, sizeof(info_short), "%02d/%02d", tk.tm_mday, tk.tm_mon + 1);
+    if (ddays < 7) snprintf(m.when_mid, sizeof(m.when_mid), "%s %s", DIAS[tk.tm_wday], hm);
+    else snprintf(m.when_mid, sizeof(m.when_mid), "%02d/%02d", tk.tm_mday, tk.tm_mon + 1);
+    if (ddays <= 0) { snprintf(m.when, sizeof(m.when), "HOJE %s", hm); snprintf(m.when_short, sizeof(m.when_short), "%s", hm); }
+    else if (ddays == 1) { snprintf(m.when, sizeof(m.when), "AMANHÃ %s", hm); snprintf(m.when_short, sizeof(m.when_short), "AMANHÃ"); }
+    else if (ddays < 7) { snprintf(m.when, sizeof(m.when), "%s %s", DIAS[tk.tm_wday], hm); snprintf(m.when_short, sizeof(m.when_short), "%s", DIAS[tk.tm_wday]); }
+    else { snprintf(m.when, sizeof(m.when), "%02d/%02d %s", tk.tm_mday, tk.tm_mon + 1, hm); snprintf(m.when_short, sizeof(m.when_short), "%02d/%02d", tk.tm_mday, tk.tm_mon + 1); }
   }
-  snprintf(tag, sizeof(tag), "%s", s_match.comp);
-
-  bool live = s_match.mode == M_LIVE;
-  int gap = 6, dot = live ? 8 : 0;
-  int tag_w = tag[0] ? text_size(tag, s_mini_font).w + 8 : 0;
-  // candidates in order of preference
-  const char *mains[] = {main_full, main_full, main_full, main_short, main_short};
-  const char *infos[] = {info_full, info_full, info_short, info_short, info_short};
-  bool tags[] = {true, false, false, false, false};
-  int chosen = 4;
-  for (int i = 0; i < 5; i++) {
-    int wv = dot + text_size(mains[i], f).w + gap + text_size(infos[i], f).w + (tags[i] && tag_w ? tag_w + gap : 0);
-    if (wv <= avail) { chosen = i; break; }
-  }
-  const char *mt = mains[chosen], *it = infos[chosen];
-  bool show_tag = tags[chosen] && tag_w;
-  int mw = text_size(mt, f).w, iw = text_size(it, f).w;
-  int total = dot + mw + gap + iw + (show_tag ? tag_w + gap : 0);
-  int x = p.origin.x + (p.size.w - total) / 2;
-  int nudge = h / 40;
-
-  if (show_tag) {
-    int th = p.size.h * 55 / 100;
-    GRect tr = GRect(x, p.origin.y + (p.size.h - th) / 2, tag_w, th);
-    graphics_context_set_fill_color(ctx, COLOR_ACCENT);
-    graphics_fill_rect(ctx, tr, 3, GCornersAll);
-    GSize ts = text_size(tag, s_mini_font);
-    graphics_context_set_text_color(ctx, GColorBlack);
-    graphics_draw_text(ctx, tag, s_mini_font, GRect(tr.origin.x, tr.origin.y + (th - ts.h) / 2 - 3, tag_w, ts.h + 6),
-                       GTextOverflowModeFill, GTextAlignmentCenter, NULL);
-    x += tag_w + gap;
-  }
-  if (live) {
-    graphics_context_set_fill_color(ctx, COLOR_ACCENT);
-    graphics_fill_circle(ctx, GPoint(x + 3, p.origin.y + p.size.h / 2), 3);
-    x += dot;
-  }
-  graphics_context_set_text_color(ctx, GColorWhite);
-  draw_text_vc(ctx, mt, f, x, p.origin.y, p.size.h, mw, nudge);
-  x += mw + gap;
-  graphics_context_set_text_color(ctx, COLOR_ACCENT);
-  draw_text_vc(ctx, it, f, x, p.origin.y, p.size.h, iw, nudge);
+  return m;
 }
 
-static void draw_bottom_row(GContext *ctx, int w, int h, int ry, int rh) {
-  bool big = PBL_IF_RECT_ELSE(w >= 180, false);
-  int rx = w * 2 / 100, rw = w * 96 / 100;
-  int gap = 4;
-  int pad = rh / 4;
-  int nudge = h / 40;
+static const char *comp_name(const char *c) {
+  if (!strcmp(c, "BR")) return "BRASILEIRÃO";
+  if (!strcmp(c, "LIB")) return "LIBERTADORES";
+  if (!strcmp(c, "CDB")) return "COPA DO BRASIL";
+  if (!strcmp(c, "CAR")) return "CARIOCA";
+  if (!strcmp(c, "SUL")) return "SUL-AMERICANA";
+  if (!strcmp(c, "REC")) return "RECOPA";
+  if (!strcmp(c, "MUN")) return "MUNDIAL";
+  if (!strcmp(c, "INT")) return "INTERCONTINENTAL";
+  if (!strcmp(c, "SUP")) return "SUPERCOPA";
+  return c[0] ? c : "FLAMENGO";
+}
 
-  // --- battery pill (right, or centred when weather is hidden)
-  static char pct[8];
-  snprintf(pct, sizeof(pct), "%d%%", s_battery);
-  int bh = rh * 36 / 100, bw = bh * 2;
-  int bt_w = s_bt_connected ? 0 : 14;
-  bool show_pct = big || !s_cfg.show_weather;
-  int pct_w = show_pct ? text_size(pct, s_small_font).w : 0;
-  int bp_w = pad + bt_w + bw + 2 + (show_pct ? 4 + pct_w : 0) + pad - 2;
-  int bx = s_cfg.show_weather ? rx + rw - bp_w : (w - bp_w) / 2;
-  GRect bp = GRect(bx, ry, bp_w, rh);
-  draw_pill(ctx, bp);
-  int x = bp.origin.x + pad;
-  if (!s_bt_connected) {
-    draw_bt_off(ctx, GPoint(x + 4, ry + (rh - bh - 4) / 2), bh + 4);
-    x += bt_w;
-  }
-  draw_battery(ctx, GRect(x, ry + (rh - bh) / 2, bw, bh));
-  x += bw + 2 + 4;
-  if (show_pct) {
-    graphics_context_set_text_color(ctx, GColorWhite);
-    draw_text_vc(ctx, pct, s_small_font, x, ry, rh, pct_w, nudge - 1);
-  }
-  if (!s_cfg.show_weather) return;
-
-  // --- weather pill (left)
-  GRect wp = GRect(rx, ry, rw - bp_w - gap, rh);
-  draw_pill(ctx, wp);
+// ---------- Shared bottom info ----------
+static void draw_weather_block(GContext *ctx, int x, int cy, int icon_s, GFont tf, bool unit, bool minmax) {
   bool ok = weather_usable();
-  static char temp[12], tmax[12], tmin[12];
-  if (ok) snprintf(temp, sizeof(temp), "%d°", temp_display(s_weather.temp));
+  static char temp[12], tmax[8], tmin[8];
+  if (ok) snprintf(temp, sizeof(temp), unit ? "%d°%s" : "%d°", temp_display(s_weather.temp), s_cfg.fahrenheit ? "F" : "C");
   else snprintf(temp, sizeof(temp), "--°");
-  GFont tf = big ? s_label_font : s_small_font;
-  int is = rh * 72 / 100;
-  int temp_w = text_size(temp, tf).w;
-  int content = (ok ? is + 4 : 0) + temp_w;
-  bool show_mm = false;
-  int mm_w = 0;
-  if (ok && rh >= 30) {
+  if (ok) {
+    draw_weather_icon(ctx, wx_icon_for(s_weather.code), s_weather.is_day, x, cy - icon_s / 2, icon_s);
+    x += icon_s + 3;
+  }
+  x += text_at(ctx, temp, tf, GColorWhite, x, cy, -1) + 4;
+  if (ok && minmax) {
     snprintf(tmax, sizeof(tmax), "%d°", temp_display(s_weather.tmax));
     snprintf(tmin, sizeof(tmin), "%d°", temp_display(s_weather.tmin));
-    GSize a = text_size(tmax, s_mini_font), b = text_size(tmin, s_mini_font);
-    mm_w = a.w > b.w ? a.w : b.w;
-    if (content + 5 + mm_w <= wp.size.w - 2 * pad) { show_mm = true; content += 5 + mm_w; }
-  }
-  x = wp.origin.x + (wp.size.w - content) / 2;
-  if (ok) {
-    draw_weather_icon(ctx, wx_icon_for(s_weather.code), s_weather.is_day, x, ry + (rh - is) / 2, is);
-    x += is + 4;
-  }
-  graphics_context_set_text_color(ctx, GColorWhite);
-  draw_text_vc(ctx, temp, tf, x, ry, rh, temp_w, nudge);
-  x += temp_w + 5;
-  if (show_mm) {
-    int lh = rh / 2;
-    graphics_context_set_text_color(ctx, PBL_IF_COLOR_ELSE(GColorRed, GColorWhite));
-    graphics_draw_text(ctx, tmax, s_mini_font, GRect(x, ry + 1, mm_w + 4, lh + 4), GTextOverflowModeFill, GTextAlignmentLeft, NULL);
-    graphics_context_set_text_color(ctx, PBL_IF_COLOR_ELSE(GColorPictonBlue, GColorWhite));
-    graphics_draw_text(ctx, tmin, s_mini_font, GRect(x, ry + lh - 3, mm_w + 4, lh + 4), GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+    int d = Y(7);
+    text_at(ctx, tmax, s_mini_font, COLOR_RED, x, cy - d, -1);
+    text_at(ctx, tmin, s_mini_font, PBL_IF_COLOR_ELSE(GColorPictonBlue, GColorWhite), x, cy + d, -1);
   }
 }
 
-static void canvas_update(Layer *layer, GContext *ctx) {
-  GRect b = layer_get_bounds(layer);
-  int w = b.size.w, h = b.size.h;
-  bool big = PBL_IF_RECT_ELSE(w >= 180, false);
-  bool match = match_visible();
+// battery icon + "80%", right-aligned at x_right (or centred when centre = true). Shows BT-off rune first.
+static void draw_battery_block(GContext *ctx, int x_right, int cy, GColor col, GFont f, bool centre) {
+  static char pct[8];
+  snprintf(pct, sizeof(pct), "%d%%", s_battery);
+  int bw = X(22), bh = Y(12) < 10 ? 10 : Y(12);
+  int pw = text_size(pct, f).w;
+  int bt = s_bt_connected ? 0 : 16;
+  int total = bt + bw + 2 + 5 + pw;
+  int x = centre ? x_right - total / 2 : x_right - total;
+  if (!s_bt_connected) { draw_bt_off(ctx, GPoint(x + 5, cy - 8), 16); x += bt; }
+  draw_battery_c(ctx, GRect(x, cy - bh / 2, bw, bh), col);
+  text_at(ctx, pct, f, col, x + bw + 2 + 5, cy, -1);
+}
 
-  // Rubro-negro horizontal stripes
-  int stripes = 12;
+// ---------- Dot-matrix LED (Placar) ----------
+static const uint8_t LED_DIGITS[10][7] = {
+  {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E}, {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E},
+  {0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F}, {0x1E, 0x01, 0x01, 0x0E, 0x01, 0x01, 0x1E},
+  {0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02}, {0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E},
+  {0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E}, {0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08},
+  {0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E}, {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C},
+};
+static const uint8_t LED_COLON[7] = {0x00, 0x04, 0x04, 0x00, 0x04, 0x04, 0x00};
+static const uint8_t LED_APOS[7]  = {0x04, 0x04, 0x08, 0x00, 0x00, 0x00, 0x00};
+static const uint8_t LED_PLUS[7]  = {0x00, 0x04, 0x04, 0x1F, 0x04, 0x04, 0x00};
+
+static bool led_glyph(char ch, const uint8_t **g, int *cols) {
+  *cols = 5;
+  if (ch >= '0' && ch <= '9') { *g = LED_DIGITS[ch - '0']; return true; }
+  if (ch == ':') { *g = LED_COLON; *cols = 3; return true; }
+  if (ch == '\'') { *g = LED_APOS; *cols = 3; return true; }
+  if (ch == '+') { *g = LED_PLUS; return true; }
+  return false;
+}
+static bool led_ok(const char *t) {
+  const uint8_t *g; int c;
+  if (!t[0]) return false;
+  for (; *t; t++) if (!led_glyph(*t, &g, &c)) return false;
+  return true;
+}
+static int led_width(const char *t, int p) {
+  const uint8_t *g; int c, w = 0;
+  for (; *t; t++) if (led_glyph(*t, &g, &c)) w += (c + 1) * p;
+  return w ? w - p : 0;
+}
+// lit pixels are (p-1)x(p-1) rounded squares; unlit pixels drawn as a tiny dot if off is not clear
+static void led_draw(GContext *ctx, int x, int y, const char *t, int p, GColor on, GColor off) {
+  const uint8_t *g; int cols;
+  int rad = p >= 4 ? 1 : 0;
+  for (; *t; t++) {
+    if (!led_glyph(*t, &g, &cols)) continue;
+    int shift = cols == 5 ? 4 : 3;   // 3-wide glyphs use bits 3..1
+    for (int j = 0; j < 7; j++) {
+      for (int i = 0; i < cols; i++) {
+        bool lit = (g[j] >> (shift - i)) & 1;
+        int x0 = x + i * p, y0 = y + j * p;
+        if (lit) {
+          graphics_context_set_fill_color(ctx, on);
+          graphics_fill_rect(ctx, GRect(x0, y0, p - 1, p - 1), rad, GCornersAll);
+        } else if (!gcolor_equal(off, GColorClear) && p >= 4) {
+          graphics_context_set_fill_color(ctx, off);
+          graphics_fill_rect(ctx, GRect(x0 + p / 2 - 1, y0 + p / 2 - 1, 2, 2), 0, GCornerNone);
+        }
+      }
+    }
+    x += (cols + 1) * p;
+  }
+}
+
+// Big outlined text: black halo around white glyphs (for the striped background)
+static void text_outlined(GContext *ctx, const char *t, GFont f, int cx, int cy, int r) {
+  GSize sz = text_size(t, f);
+  int left = cx - sz.w / 2, top = cy - cap_mid(f, sz.h);
+  graphics_context_set_text_color(ctx, GColorBlack);
+  for (int dy = -r; dy <= r; dy += 2) {
+    for (int dx = -r; dx <= r; dx += 2) {
+      if (dx * dx + dy * dy > r * r + 2 || (dx == 0 && dy == 0)) continue;
+      graphics_draw_text(ctx, t, f, safe_box(left + dx, top + dy, sz.w + 6, sz.h + 10),
+                         GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+    }
+  }
+  graphics_context_set_text_color(ctx, GColorWhite);
+  graphics_draw_text(ctx, t, f, safe_box(left, top, sz.w + 6, sz.h + 10), GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+}
+
+// ======================= 1. CLÁSSICO LISTRADO =======================
+static void draw_classico(GContext *ctx, bool match) {
+  int w = s_w, h = s_h;
+  int stripes = 10;
   for (int i = 0; i < stripes; i++) {
     int y0 = h * i / stripes, y1 = h * (i + 1) / stripes;
     graphics_context_set_fill_color(ctx, (i % 2 == 0) ? COLOR_RED : GColorBlack);
     graphics_fill_rect(ctx, GRect(0, y0, w, y1 - y0), 0, GCornerNone);
   }
+  // top bar: shield + MENGÃO + date
+  int top_h = Y(34);
+  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_fill_rect(ctx, GRect(0, 0, w, top_h), 0, GCornerNone);
+  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_fill_rect(ctx, GRect(0, top_h, w, 2), 0, GCornerNone);
+  int sh = top_h * 70 / 100, sw = sh * 80 / 100;
+  draw_shield(ctx, GRect(X(9), (top_h - sh) / 2, sw, sh));
+  text_at(ctx, "MENGÃO", s_black_font, GColorWhite, X(9) + sw + 6, top_h / 2, -1);
+  text_at(ctx, s_date_buf, s_bold_font, COLOR_RED, w - X(8), top_h / 2, 1);
 
-  if (match && big) {
-    // emery: MENGÃO pill, compact time panel, match pill, bottom row
-    draw_top_pill(ctx, GRect(w * 14 / 100, h * 2 / 100, w * 72 / 100, h * 14 / 100), h, true);
-    draw_center_panel(ctx, GRect(w * 5 / 100, h * 18 / 100, w * 90 / 100, h * 45 / 100), w, h, true);
-    draw_match_pill(ctx, GRect(w * 2 / 100, h * 65 / 100, w * 96 / 100, h * 14 / 100), h);
-    draw_bottom_row(ctx, w, h, h * 81 / 100, h * 15 / 100);
+  // bottom bar: weather + battery
+  int bar_y = Y(192);
+  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_fill_rect(ctx, GRect(0, bar_y, w, h - bar_y), 0, GCornerNone);
+  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_fill_rect(ctx, GRect(0, bar_y, w, 2), 0, GCornerNone);
+  int bar_cy = bar_y + (h - bar_y) / 2 + 1;
+  if (s_cfg.show_weather) {
+    draw_weather_block(ctx, X(7), bar_cy, Y(26), s_label_font, false, true);
+    draw_battery_block(ctx, w - X(8), bar_cy, GColorWhite, s_bold_font, false);
   } else {
-    // v1.1 layout; on small watches the match pill takes the place of the MENGÃO pill
-    if (match) draw_match_pill(ctx, GRect(w * 2 / 100, h * 3 / 100, w * 96 / 100, h * 17 / 100), h);
-    else draw_top_pill(ctx, GRect(w * 14 / 100, h * 3 / 100, w * 72 / 100, h * 17 / 100), h, false);
-    draw_center_panel(ctx, GRect(w * 5 / 100, h * 25 / 100, w * 90 / 100, h * 50 / 100), w, h, false);
-    draw_bottom_row(ctx, w, h, h * 80 / 100, h * 15 / 100);
+    draw_battery_block(ctx, w / 2, bar_cy, GColorWhite, s_bold_font, true);
+  }
+
+  // time
+  int time_cy = match ? Y(92) : (top_h + bar_y) / 2;
+  text_outlined(ctx, s_time_buf, s_anton, w / 2, time_cy, X(4) < 3 ? 3 : X(4));
+
+  if (!match) return;
+  // game card
+  MatchText m = match_text();
+  bool live = s_match.mode == M_LIVE, fin = s_match.mode == M_FINAL;
+  GRect card = GRect(X(8), Y(146), w - 2 * X(8), Y(36));
+  int ccy = card.origin.y + card.size.h / 2;
+  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_fill_rect(ctx, card, 6, GCornersAll);
+  // left tag: competition (next), live clock (live) or FIM
+  const char *tag = live ? s_match.clock : (fin ? "FIM" : s_match.comp);
+  int tag_w = text_size(tag, s_bold_font).w + X(12) + (live ? 8 : 0);
+  if (tag_w < X(32)) tag_w = X(32);
+  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_fill_rect(ctx, GRect(card.origin.x, card.origin.y, tag_w, card.size.h), 6, GCornersLeft);
+  int tx = card.origin.x + tag_w / 2;
+  if (live) {
+    int tw = text_size(tag, s_bold_font).w + 8;
+    graphics_context_set_fill_color(ctx, COLOR_RED);
+    graphics_fill_circle(ctx, GPoint(tx - tw / 2 + 2, ccy), 3);
+    text_at(ctx, tag, s_bold_font, COLOR_RED, tx - tw / 2 + 8, ccy, -1);
+  } else {
+    text_at(ctx, tag, s_bold_font, fin ? GColorWhite : COLOR_RED, tx, ccy, 0);
+  }
+  // teams + when
+  int ax = card.origin.x + tag_w + X(6), ar = card.origin.x + card.size.w - X(6);
+  int avail = ar - ax;
+  GColor ink = PBL_IF_COLOR_ELSE(GColorBlack, GColorBlack);
+  if (live || fin) {
+    int tw = text_size(m.teams, s_black_font).w;
+    text_at(ctx, m.teams, (tw <= avail) ? s_black_font : s_bold_font, ink, ax + avail / 2, ccy, 0);
+  } else {
+    int tw = text_size(m.teams, s_black_font).w;
+    const char *wh = m.when;
+    if (tw + 6 + text_size(wh, s_bold_font).w > avail) wh = m.when_mid;
+    if (tw + 6 + text_size(wh, s_bold_font).w > avail) wh = m.when_short;
+    text_at(ctx, m.teams, s_black_font, ink, ax, ccy, -1);
+    text_at(ctx, wh, s_bold_font, C_DRED, ar, ccy, 1);
+  }
+}
+
+// ======================= 2. MINIMALISTA =======================
+static void draw_minimal(GContext *ctx, bool match) {
+  int w = s_w;
+  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_fill_rect(ctx, GRect(0, 0, w, s_h), 0, GCornerNone);
+  // hours / minutes stacked
+  char hh[4], mm[4];
+  const char *colon = strchr(s_time_buf, ':');
+  int hl = colon ? (int)(colon - s_time_buf) : 2;
+  snprintf(hh, sizeof(hh), "%.*s", hl, s_time_buf);
+  snprintf(mm, sizeof(mm), "%s", colon ? colon + 1 : "");
+  int col_l = X(4), col_r = X(118);
+  int cx = (col_l + col_r) / 2;
+  text_at(ctx, hh, s_bebas, GColorWhite, cx, Y(62), 0);
+  text_at(ctx, mm, s_bebas, COLOR_RED, cx, Y(164), 0);
+  // thin red rule
+  graphics_context_set_fill_color(ctx, COLOR_RED);
+  graphics_fill_rect(ctx, GRect(col_r + X(2), Y(18), 2, Y(192)), 0, GCornerNone);
+
+  // right column
+  int x = col_r + X(12), xr = w - X(6);
+  time_t now = time(NULL);
+  struct tm *t = localtime(&now);
+  char day[4];
+  snprintf(day, sizeof(day), "%d", t->tm_mday);
+  int y = Y(22);
+  text_at(ctx, DIAS[t->tm_wday], s_label_font, C_LGRY, x, y, -1);
+  text_at(ctx, day, s_day_font, GColorWhite, x, y + Y(26), -1);
+  text_at(ctx, MESES[t->tm_mon], s_label_font, C_LGRY, x, y + Y(52), -1);
+  y += Y(70);
+  graphics_context_set_fill_color(ctx, C_DGRY);
+  graphics_fill_rect(ctx, GRect(x, y, xr - x, 1), 0, GCornerNone);
+  if (s_cfg.show_weather) {
+    draw_weather_block(ctx, x - 2, y + Y(19), Y(22), s_label_font, false, false);
+    y += Y(38);
+    graphics_fill_rect(ctx, GRect(x, y, xr - x, 1), 0, GCornerNone);
+  }
+  if (match) {
+    MatchText m = match_text();
+    bool scored = s_match.mode == M_LIVE || s_match.mode == M_FINAL;
+    draw_urubu(ctx, x + X(10), y + Y(17), X(10), COLOR_RED);
+    text_at(ctx, scored ? m.score : m.opp, s_black_font, GColorWhite, x + X(24), y + Y(16), -1);
+    static char l2[20];
+    if (scored) snprintf(l2, sizeof(l2), "%s %s", m.opp, m.when);
+    else snprintf(l2, sizeof(l2), "%s", m.when);
+    if (text_size(l2, s_bold_font).w > xr - x) {
+      if (scored) snprintf(l2, sizeof(l2), "%s", m.when); else snprintf(l2, sizeof(l2), "%s", m.when_mid);
+    }
+    if (text_size(l2, s_bold_font).w > xr - x && !scored) snprintf(l2, sizeof(l2), "%s", m.when_short);
+    if (s_match.mode == M_LIVE) {
+      graphics_context_set_fill_color(ctx, COLOR_RED);
+    }
+    text_at(ctx, l2, s_bold_font, COLOR_RED, x, y + Y(37), -1);
+    y += Y(54);
+    graphics_context_set_fill_color(ctx, C_DGRY);
+    graphics_fill_rect(ctx, GRect(x, y, xr - x, 1), 0, GCornerNone);
+  }
+  // battery at the bottom of the column
+  int by = Y(201);
+  if (!s_bt_connected) draw_bt_off(ctx, GPoint(x + 4, by - Y(30)), 16);
+  draw_battery_c(ctx, GRect(x, by - Y(5), X(20), Y(10) < 8 ? 8 : Y(10)), C_LGRY);
+  static char pct[8];
+  snprintf(pct, sizeof(pct), "%d%%", s_battery);
+  text_at(ctx, pct, s_bold_font, C_LGRY, x + X(27), by, -1);
+}
+
+// ======================= 3. PLACAR / ESTÁDIO =======================
+static void draw_placar(GContext *ctx, bool match) {
+  int w = s_w, h = s_h;
+  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_fill_rect(ctx, GRect(0, 0, w, h), 0, GCornerNone);
+  bool big = w >= 180;
+  GRect panel = GRect(X(4), Y(60), w - 2 * X(4), Y(126));
+  int bar_cy = Y(209);
+
+  if (match) {
+    // top: amber LED clock + date
+    int p = big ? 5 : 3;
+    led_draw(ctx, (w - led_width(s_time_buf, p)) / 2, Y(6), s_time_buf, p, C_AMBER, GColorClear);
+    text_at(ctx, s_date_buf, s_bold_font, C_LGRY, w / 2, Y(50), 0);
+
+    MatchText m = match_text();
+    bool live = s_match.mode == M_LIVE, fin = s_match.mode == M_FINAL;
+    // panel frame + header
+    graphics_context_set_stroke_color(ctx, C_DGRY);
+    graphics_context_set_stroke_width(ctx, 1);
+    graphics_draw_round_rect(ctx, panel, 4);
+    int hh = Y(17);
+    graphics_context_set_fill_color(ctx, C_DRED);
+    graphics_fill_rect(ctx, GRect(panel.origin.x, panel.origin.y, panel.size.w, hh), 4, GCornersTop);
+    text_at(ctx, comp_name(s_match.comp), s_bold_font, GColorWhite, w / 2, panel.origin.y + hh / 2 + 1, 0);
+    // team tags: home team on the left
+    int tag_w = X(78), tag_h = Y(20), ty = Y(82);
+    int lx = X(12), rx = w - X(12) - tag_w;
+    int fla_x = s_match.home ? lx : rx, opp_x = s_match.home ? rx : lx;
+    graphics_context_set_fill_color(ctx, COLOR_RED);
+    graphics_fill_rect(ctx, GRect(fla_x, ty, tag_w, tag_h), 0, GCornerNone);
+    graphics_context_set_fill_color(ctx, GColorWhite);
+    graphics_fill_rect(ctx, GRect(opp_x, ty, tag_w, tag_h), 0, GCornerNone);
+    text_at(ctx, "FLA", s_black_font, GColorWhite, fla_x + tag_w / 2, ty + tag_h / 2, 0);
+    text_at(ctx, m.opp, s_black_font, GColorBlack, opp_x + tag_w / 2, ty + tag_h / 2, 0);
+
+    int sy = Y(106);
+    int lcx = lx + tag_w / 2, rcx = rx + tag_w / 2;
+    int row_cy = Y(171);
+    if (live || fin) {
+      int p2 = big ? 6 : 4;
+      char a[4], b[4];
+      int ls = s_match.home ? s_match.fla : s_match.opp, rs = s_match.home ? s_match.opp : s_match.fla;
+      snprintf(a, sizeof(a), "%d", ls > 99 ? 99 : ls);
+      snprintf(b, sizeof(b), "%d", rs > 99 ? 99 : rs);
+      led_draw(ctx, lcx - led_width(a, p2) / 2, sy, a, p2, COLOR_RED, C_MAROON);
+      led_draw(ctx, rcx - led_width(b, p2) / 2, sy, b, p2, COLOR_RED, C_MAROON);
+      graphics_context_set_fill_color(ctx, C_LGRY);
+      graphics_fill_rect(ctx, GRect(w / 2 - X(6), sy + 7 * p2 / 2 - 2, X(12), 4), 0, GCornerNone);
+      if (live) {
+        int p3 = big ? 3 : 2;
+        bool led_clock = led_ok(s_match.clock);
+        int cw = led_clock ? led_width(s_match.clock, p3) : text_size(s_match.clock, s_black_font).w;
+        int lw = text_size("AO VIVO", s_bold_font).w;
+        int total = 13 + lw + X(14) + cw;
+        int x = (w - total) / 2;
+        graphics_context_set_fill_color(ctx, COLOR_RED);
+        graphics_fill_circle(ctx, GPoint(x + 4, row_cy), 4);
+        text_at(ctx, "AO VIVO", s_bold_font, GColorWhite, x + 13, row_cy, -1);
+        x += 13 + lw + X(14);
+        if (led_clock) led_draw(ctx, x, row_cy - 7 * p3 / 2, s_match.clock, p3, C_YELLOW, GColorClear);
+        else text_at(ctx, s_match.clock, s_black_font, C_YELLOW, x, row_cy, -1);
+      } else {
+        text_at(ctx, "ENCERRADO", s_bold_font, C_LGRY, w / 2, row_cy, 0);
+      }
+    } else {
+      // next game: kick-off time in LED + day
+      int p2 = big ? 6 : 4;
+      led_draw(ctx, (w - led_width(m.ko, p2)) / 2, sy, m.ko, p2, COLOR_RED, GColorClear);
+      static char line[24];
+      time_t ko = s_match.kickoff;
+      struct tm tk = *localtime(&ko);
+      const char *wd = m.when_short;
+      if (!strncmp(m.when, "HOJE", 4)) wd = "HOJE";
+      snprintf(line, sizeof(line), "PRÓXIMO JOGO - %s", wd);
+      if (strchr(wd, '/') == NULL && strcmp(wd, "HOJE") && strcmp(wd, "AMANHÃ"))
+        snprintf(line, sizeof(line), "PRÓXIMO JOGO - %s %02d/%02d", wd, tk.tm_mday, tk.tm_mon + 1);
+      if (text_size(line, s_bold_font).w > panel.size.w - 8) snprintf(line, sizeof(line), "%s %02d/%02d", DIAS[tk.tm_wday], tk.tm_mday, tk.tm_mon + 1);
+      text_at(ctx, line, s_bold_font, GColorWhite, w / 2, row_cy, 0);
+    }
+  } else {
+    // no game: big LED clock in the panel
+    int p = big ? 6 : 4;
+    int lw = led_width(s_time_buf, p);
+    text_at(ctx, "MENGÃO", s_black_font, COLOR_RED, w / 2, Y(30), 0);
+    led_draw(ctx, (w - lw) / 2, panel.origin.y + Y(20), s_time_buf, p, C_AMBER, GColorClear);
+    text_at(ctx, s_date_buf, s_label_font, C_LGRY, w / 2, panel.origin.y + Y(20) + 7 * p + Y(22), 0);
+  }
+
+  // bottom row: weather (with unit) + battery
+  if (s_cfg.show_weather) {
+    draw_weather_block(ctx, X(8), bar_cy, Y(28), s_black_font, true, false);
+    draw_battery_block(ctx, w - X(8), bar_cy, GColorWhite, s_bold_font, false);
+  } else {
+    draw_battery_block(ctx, w / 2, bar_cy, GColorWhite, s_bold_font, true);
+  }
+}
+
+static void canvas_update(Layer *layer, GContext *ctx) {
+  GRect b = layer_get_bounds(layer);
+  s_w = b.size.w; s_h = b.size.h;
+  bool match = match_visible();
+  switch (s_cfg.style) {
+    case STYLE_MINIMAL: draw_minimal(ctx, match); break;
+    case STYLE_PLACAR:  draw_placar(ctx, match); break;
+    default:            draw_classico(ctx, match); break;
   }
 }
 
@@ -596,6 +850,11 @@ static void apply_settings(DictionaryIterator *it) {
     s_cfg.wx_interval = (v >= 5 && v <= 240) ? v : 30;
     changed = true;
   }
+  if ((t = dict_find(it, MESSAGE_KEY_CFG_STYLE))) {
+    int v = tuple_int(t);
+    s_cfg.style = (v >= 0 && v <= 2) ? v : 0;
+    changed = true;
+  }
   if (changed) {
     persist_write_data(PERSIST_KEY_SETTINGS, &s_cfg, sizeof(s_cfg));
     // fetch anything that was just switched on
@@ -648,24 +907,49 @@ static void window_unload(Window *window) { layer_destroy(s_canvas); s_canvas = 
 
 static void init(void) {
 #if defined(PBL_PLATFORM_EMERY)
-  s_time_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_TIME_LG_80));
-  s_label_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LABEL_LG_30));
-  s_small_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LABEL_SM_22));
+  s_anton = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_ANTON_80));
+  s_bebas = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_BEBAS_100));
+  s_black_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_BLACK_21));
+  s_bold_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_BOLD_17));
+  s_label_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LABEL_22));
+  s_day_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_DAY_34));
 #else
-  s_time_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_TIME_SM_60));
-  s_label_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LABEL_SM_22));
-  s_small_font = s_label_font;
+  s_anton = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_ANTON_58));
+  s_bebas = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_BEBAS_80));
+  s_black_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_BLACK_17));
+  s_bold_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_BOLD_14));
+  s_label_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LABEL_18));
+  s_day_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_DAY_26));
 #endif
   s_mini_font = fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD);
 
   if (persist_exists(PERSIST_KEY_SETTINGS)) persist_read_data(PERSIST_KEY_SETTINGS, &s_cfg, sizeof(s_cfg));
   if (s_cfg.wx_interval < 5) s_cfg.wx_interval = 30;
+  if (s_cfg.style > 2) s_cfg.style = 0;
   if (persist_exists(PERSIST_KEY_WEATHER)) persist_read_data(PERSIST_KEY_WEATHER, &s_weather, sizeof(s_weather));
   if (persist_exists(PERSIST_KEY_MATCH)) persist_read_data(PERSIST_KEY_MATCH, &s_match, sizeof(s_match));
 #ifdef PREVIEW_MOCK
+#ifndef PREVIEW_OPP
+#define PREVIEW_OPP "PAL"
+#endif
+#ifndef PREVIEW_COMP
+#define PREVIEW_COMP "BR"
+#endif
+#ifndef PREVIEW_CLOCK
+#define PREVIEW_CLOCK "67'"
+#endif
   s_weather = (Weather){.temp = 27, .tmin = 21, .tmax = 31, .code = 2, .is_day = PREVIEW_DAY, .valid = 1, .ts = time(NULL)};
   s_match = (Match){.mode = PREVIEW_MODE, .home = 1, .fla = 2, .opp = 1, .kickoff = time(NULL) + PREVIEW_KO_OFFSET,
-                    .id = 1, .opp_abbr = "EST", .comp = "LIB", .clock = "67'"};
+                    .id = 1, .opp_abbr = PREVIEW_OPP, .comp = PREVIEW_COMP, .clock = PREVIEW_CLOCK};
+#ifdef PREVIEW_STYLE
+  s_cfg.style = PREVIEW_STYLE;
+#endif
+#ifdef PREVIEW_AWAY
+  s_match.home = 0;
+#endif
+#ifdef PREVIEW_HIDE_WEATHER
+  s_cfg.show_weather = 0;
+#endif
 #ifdef PREVIEW_FAHRENHEIT
   s_cfg.fahrenheit = 1;
 #endif
@@ -692,11 +976,12 @@ static void deinit(void) {
   connection_service_unsubscribe();
   app_message_deregister_callbacks();
   window_destroy(s_window);
-  fonts_unload_custom_font(s_time_font);
+  fonts_unload_custom_font(s_anton);
+  fonts_unload_custom_font(s_bebas);
+  fonts_unload_custom_font(s_black_font);
+  fonts_unload_custom_font(s_bold_font);
   fonts_unload_custom_font(s_label_font);
-#if defined(PBL_PLATFORM_EMERY)
-  fonts_unload_custom_font(s_small_font);
-#endif
+  fonts_unload_custom_font(s_day_font);
 }
 
 int main(void) { init(); app_event_loop(); deinit(); }
