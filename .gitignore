@@ -1,1 +1,8 @@
+build/
+node_modules/
 .lock-waf*
+*.pbw
+!dist/Mengao-v*.pbw
+.DS_Store
+*~
+*.swp

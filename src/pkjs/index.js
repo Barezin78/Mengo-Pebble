@@ -113,10 +113,39 @@ function sendMatch(m, mode) {
   send(d);
 }
 
+// ESPN scoreboard is keyed by the calendar date in America/New_York (handles DST).
+function easternYmd(ms) {
+  try {
+    var parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).formatToParts(new Date(ms));
+    var y = '', mo = '', d = '';
+    for (var i = 0; i < parts.length; i++) {
+      if (parts[i].type === 'year') y = parts[i].value;
+      else if (parts[i].type === 'month') mo = parts[i].value;
+      else if (parts[i].type === 'day') d = parts[i].value;
+    }
+    if (y && mo && d) return y + mo + d;
+  } catch (e) { /* fall through */ }
+  // Fallback without Intl: US Eastern DST (2nd Sun Mar 02:00 → 1st Sun Nov 02:00).
+  var dt = new Date(ms);
+  var y = dt.getUTCFullYear();
+  function nthSunday(monthIndex, n) {
+    var first = new Date(Date.UTC(y, monthIndex, 1));
+    var day = first.getUTCDay();
+    var dom = 1 + ((7 - day) % 7) + (n - 1) * 7;
+    return Date.UTC(y, monthIndex, dom, 7, 0, 0); // 02:00 ET ≈ 07:00 UTC in EST; close enough for date key
+  }
+  var start = nthSunday(2, 2); // March
+  var end = nthSunday(10, 1);  // November
+  var off = (ms >= start && ms < end) ? 4 : 5;
+  var et = new Date(ms - off * 3600 * 1000);
+  return et.getUTCFullYear() + ('0' + (et.getUTCMonth() + 1)).slice(-2) + ('0' + et.getUTCDate()).slice(-2);
+}
+
 // Live score: the league scoreboard refreshes faster than the team schedule
 function fetchLive(m, done) {
-  var et = new Date(m.kickoff - 5 * 3600 * 1000);   // ESPN groups games by US Eastern date
-  var ymd = et.getUTCFullYear() + ('0' + (et.getUTCMonth() + 1)).slice(-2) + ('0' + et.getUTCDate()).slice(-2);
+  var ymd = easternYmd(m.kickoff);
   get(ESPN + m.slug + '/scoreboard?dates=' + ymd, function (j) {
     var evs = j.events || [];
     for (var i = 0; i < evs.length; i++) {

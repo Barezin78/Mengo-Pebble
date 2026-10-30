@@ -811,6 +811,11 @@ static void tick_handler(struct tm *t, TimeUnits changed) {
 }
 
 static void apply_match(DictionaryIterator *it) {
+  /* M_ERR: phone failed; keep the cached match (do not clear). */
+  if (dict_find(it, MESSAGE_KEY_M_ERR)) {
+    APP_LOG(APP_LOG_LEVEL_INFO, "match fetch error — keeping cache");
+    return;
+  }
   Tuple *mode = dict_find(it, MESSAGE_KEY_M_MODE);
   if (!mode) return;
   Match m = s_match;
@@ -879,7 +884,7 @@ static void inbox_received(DictionaryIterator *it, void *ctx) {
     // location / network failed: keep a recent cache, otherwise show "--°"
     if (time(NULL) - s_weather.ts > WEATHER_ERR_AGE) s_weather.valid = 0;
   }
-  apply_match(it);   // M_ERR (no M_MODE) keeps the cached match
+  apply_match(it);   // M_ERR keeps the cached match (read above)
 #endif
   if (s_canvas) layer_mark_dirty(s_canvas);
 }

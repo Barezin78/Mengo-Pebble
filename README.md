@@ -1,36 +1,41 @@
-# pebble-flamengo-tmp
+# Mengão para Pebble 🔴⚫ (v1.3.2)
 
-A Pebble watchapp/watchface written in C using the Pebble SDK.
+Watchface de fã do Flamengo para **Pebble** (emery / basalt / diorite). Mostra o relógio, o clima e o próximo jogo (ou o placar ao vivo / final) puxado da ESPN.
 
-## Building & running
+![telas](mockups/contact-sheet.png)
+
+## Funções
+- Estilos: **Clássico**, **Minimalista** e **Placar**.
+- Clima (Open-Meteo) e configuração pelo Clay no celular.
+- Jogos do Flamengo via ESPN: próximo, ao vivo e final.
+- Vibração de gol e de Bluetooth (opcional).
+- Data do placar ESPN em `America/New_York` (com horário de verão).
+
+## Instalar
+Baixe o `Mengao-v1.3.2.pbw` da release e abra no app da Pebble / Rebble no celular.
+
+## Compilar
+Precisa do [Pebble SDK / Rebble](https://developer.repebble.com):
 
 ```sh
-pebble build                          # build for all targetPlatforms
-pebble install --emulator emery       # install on the emery emulator
-pebble install --phone <ip>           # install to a paired phone
+pebble build
+pebble install --emulator emery
+# ou: pebble install --phone <ip>
 ```
 
-## Target platforms
+Plataformas em `package.json` → `pebble.targetPlatforms`: emery, basalt, diorite.
 
-`targetPlatforms` in `package.json` controls which watches you build for. The
-modern Pebble hardware is **emery** (Pebble Time 2), **gabbro** (Pebble Round
-2), and **flint** (Pebble 2 Duo); the original Pebble platforms (aplite,
-basalt, chalk, diorite) are included by default for backwards compatibility.
-
-## Project layout
-
+## Layout
 ```
-src/c/           C source for the watchapp
-src/pkjs/        PebbleKit JS (phone-side) source, if any
-worker_src/c/    Background worker source, if any
-resources/       Images, fonts, and other bundled resources
-package.json     Project metadata (UUID, platforms, resources, message keys)
-wscript          Build rules — usually no need to edit
+src/c/           C do relógio
+src/pkjs/        PebbleKit JS (clima, ESPN, Clay)
+resources/       fontes
+mockups/         prévias
+screenshots/     capturas no emulador
+test/            testes Node (data Eastern)
 ```
 
-By default this project is configured as a watchapp. To make it a watchface,
-set `pebble.watchapp.watchface` to `true` in `package.json`.
+## Changelog
+Veja `CHANGELOG.md`.
 
-## Documentation
-
-Full SDK docs, tutorials, and API reference: <https://developer.repebble.com>
+App de fã, sem vínculo oficial com o C.R. Flamengo. Autor: Barezin78.
